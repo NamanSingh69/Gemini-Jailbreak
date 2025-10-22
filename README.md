@@ -85,4 +85,3 @@ npm run dev
 
 ## License
 - For internal demo and event use; add an explicit license file before broader distribution.
-```

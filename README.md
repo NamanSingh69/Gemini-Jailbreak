@@ -84,4 +84,4 @@ npm run dev
 - Empty renders: ensure the backend returns text; the UI will display a fallback message if an error key is present.
 
 ## License
-- For internal demo and event use; add an explicit license file before broader distribution.
+- MIT Licence 

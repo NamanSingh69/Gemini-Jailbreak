@@ -1,20 +1,13 @@
 # backend/app.py
 import os
 from typing import List, Optional, Dict
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from google import genai
 from google.genai import types
-
-load_dotenv()
-API_KEY = os.getenv("GOOGLE_API_KEY")
-if not API_KEY:
-    raise RuntimeError("GOOGLE_API_KEY not set in environment")
-
-client = genai.Client(api_key=API_KEY)
 
 app = FastAPI(title="Gemini Demo (Jailbreak Toggle)")
 
@@ -96,7 +89,16 @@ async def send_message(
     use_system: bool = Form(False),
     temperature: float = Form(0.1),
     files: Optional[List[UploadFile]] = File(None),
+    x_api_key: str = Header(None, alias="x-api-key"),
 ):
+    # Validate API key is provided
+    if not x_api_key or not x_api_key.strip():
+        return {
+            "error": "API_KEY_MISSING",
+            "text": "Please enter your Gemini API key in the settings panel. Get your key at: https://aistudio.google.com/app/apikey",
+            "retryable": False,
+        }
+    
     if model not in ALLOWED_MODELS:
         return {"error": "Model not allowed", "allowed": ALLOWED_MODELS}
 
@@ -123,9 +125,19 @@ async def send_message(
 
     contents = history + [user_content]
 
+    # Create per-request client with user-provided API key
+    try:
+        user_client = genai.Client(api_key=x_api_key.strip())
+    except Exception as e:
+        return {
+            "error": "INVALID_API_KEY",
+            "text": f"Failed to initialize Gemini client with provided API key: {str(e)}. Verify your key at https://aistudio.google.com/app/apikey",
+            "retryable": False,
+        }
+
     # Call Gemini safely; on outages return a friendly bubble instead of crashing the UI
     try:
-        response = client.models.generate_content(
+        response = user_client.models.generate_content(
             model=model,
             contents=contents,
             config=config,
@@ -149,8 +161,10 @@ async def send_message(
         }
     except Exception as e:
         # Common transient: 503 UNAVAILABLE "The model is overloaded. Please try again later."
-        # Return a graceful message so the frontend can display it as a chat bubble.
-        err_msg = f"Temporary service issue: {str(e)}"
+        # Also catches invalid API key errors from Gemini
+        err_msg = f"API Error: {str(e)}"
+        if "API key not valid" in str(e) or "PERMISSION_DENIED" in str(e):
+            err_msg = "Invalid API key. Please verify your key at: https://aistudio.google.com/app/apikey"
         fallback = types.Content(role="model", parts=[types.Part.from_text(text=err_msg)])
         SESSIONS[session_id] = contents + [fallback]
         return {
@@ -159,8 +173,8 @@ async def send_message(
             "text": err_msg,
             "used_system_instruction": bool(system_instruction),
             "model": model,
-            "error": "SERVICE_UNAVAILABLE",
-            "retryable": True,
+            "error": "SERVICE_ERROR",
+            "retryable": "overloaded" in str(e).lower(),
         }
 
 # start server : uvicorn backend.app:app --reload --port 8000

@@ -16,7 +16,6 @@ A local demo app that calls the Gemini API, supports a server-side system instru
 ```
 
 .
-├─ .env
 ├─ backend/
 │  ├─ app.py
 │  ├─ requirements.txt
@@ -75,8 +74,8 @@ npm run dev
 - The system instruction never leaves the server and is not visible in frontend requests.
 
 ## Environment and keys
-- Keep the API key only in the backend `.env`; never embed keys in frontend code.  
-- For production, add persistent storage and more robust auth, logging, and rate limiting.
+- Get your API key here: https://aistudio.google.com/api-keys
+- The API key is sent directly to Google's servers and is never stored by this application
 
 ## Troubleshooting
 - 503 UNAVAILABLE (“The model is overloaded”): retry, or switch models and try again; the UI will show a readable error bubble.  

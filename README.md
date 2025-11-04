@@ -36,12 +36,7 @@ A local demo app that calls the Gemini API, supports a server-side system instru
 ## Prerequisites
 - Python 3.10+ and pip.  
 - Node.js LTS and npm.  
-- A Gemini API key placed in `.env` at repo root:
-```
-
-GOOGLE_API_KEY=YOUR_KEY
-
-```
+- A Gemini API key 
 
 ## Backend setup
 ```

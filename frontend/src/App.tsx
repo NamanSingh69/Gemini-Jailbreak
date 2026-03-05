@@ -1,413 +1,285 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { fetchModels, fetchHistory, sendMessage } from './api'
-import type { Message } from './types'
-
-function newSessionId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36)
-}
-
-function IconUser({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="8" r="4" fill="#b1e3ff" />
-      <path d="M4 20c0-4 4-6 8-6s8 2 8 6" fill="#b1e3ff" />
-    </svg>
-  )
-}
-
-function IconBot({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <rect x="4" y="6" width="16" height="12" rx="3" fill="#c8c6ff" />
-      <circle cx="9" cy="12" r="2" fill="#0b0f17" />
-      <circle cx="15" cy="12" r="2" fill="#0b0f17" />
-      <rect x="11" y="3" width="2" height="3" rx="1" fill="#c8c6ff" />
-    </svg>
-  )
-}
-
-function IconKey({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-    </svg>
-  )
-}
-
-function RoleTag({ role }: { role: 'user' | 'model' }) {
-  const tagStyle: React.CSSProperties =
-    role === 'user'
-      ? { background: 'linear-gradient(135deg,#1f7aed,#4fc3f7)', color: '#eaf6ff' }
-      : { background: 'linear-gradient(135deg,#6c5ce7,#a29bfe)', color: '#f1eeff' }
-  return (
-    <span
-      style={{
-        ...tagStyle,
-        fontSize: 11,
-        padding: '4px 8px',
-        borderRadius: 999,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        boxShadow: '0 1px 2px rgba(0,0,0,0.35)',
-        border: '1px solid rgba(255,255,255,0.1)',
-      }}
-    >
-      {role === 'user' ? <IconUser /> : <IconBot />}
-      {role === 'user' ? 'User' : 'Model'}
-    </span>
-  )
-}
-
-function MessageBubble({ role, text }: { role: 'user' | 'model'; text: string }) {
-  const isUser = role === 'user'
-  const bubbleStyle: React.CSSProperties = {
-    maxWidth: '78%',
-    padding: '12px 14px',
-    borderRadius: 14,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
-    border: '1px solid #1f2937',
-    background: isUser ? 'linear-gradient(180deg,#1b2b49,#0f1a2e)' : 'linear-gradient(180deg,#161b2c,#121826)',
-    color: '#e9eef7',
-  }
-  return (
-    <div style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start', margin: '10px 0' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start', gap: 6 }}>
-        <RoleTag role={role} />
-        <div className="bubble" style={bubbleStyle}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {text}
-          </ReactMarkdown>
-        </div>
-      </div>
-    </div>
-  )
-}
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ShieldAlert, Zap, Cpu, Search, Trash2, KeyRound, Eye, EyeOff, Send, Paperclip } from 'lucide-react';
+import { fetchModels } from './api';
+import { useChat } from './hooks/useChat';
+import { MessageBubble, LoadingBubble } from './components/MessageBubble';
+import { Toaster, toast } from 'sonner';
 
 export default function App() {
-  const [sessionId, setSessionId] = useState<string>(newSessionId())
-  const [models, setModels] = useState<string[]>([])
-  const [model, setModel] = useState<string>('gemini-2.5-pro')
-  const [messages, setMessages] = useState<Message[]>([])
-  const [text, setText] = useState('')
-  const [files, setFiles] = useState<File[]>([])
-  const [useSystem, setUseSystem] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [apiKey, setApiKey] = useState('')
-  const [showApiKey, setShowApiKey] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState<string>('gemini-3.1-pro');
+  const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [useSystem, setUseSystem] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const { messages, isBusy, error, onSend, onNewSession } = useChat(model);
 
   useEffect(() => {
-    fetchModels().then(setModels).catch(() => setModels(['gemini-2.5-pro', 'gemini-flash-latest', 'gemini-flash-lite-latest']))
-  }, [])
+    fetchModels().then(setModels).catch(() => setModels(['gemini-3.1-pro', 'gemini-3.1-flash']));
+  }, []);
 
+  // Auto-scroll to bottom of chat
   useEffect(() => {
-    fetchHistory(sessionId)
-      .then((h) => {
-        const hist = (h.history ?? []) as { role: 'user' | 'model'; text: string }[]
-        setMessages(hist)
-      })
-      .catch(() => setMessages([]))
-  }, [sessionId])
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isBusy]);
 
+  // Handle keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault()
-        onSend()
+        e.preventDefault();
+        handleSend();
       }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [text, files, model, useSystem, sessionId, apiKey])
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [text, files, model, useSystem, apiKey, onSend]);
+
+  const handleSend = () => {
+    if (!text.trim() && files.length === 0) return;
+    onSend({ text, files, apiKey, model, useSystem });
+    setText('');
+    setFiles([]);
+    if (fileRef.current) fileRef.current.value = '';
+    // Optional: Keep focus on input for rapid prompting
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
 
   const banner = useMemo(
-    () => (useSystem ? 'Jailbreak mode ON: Server-side system instruction is active.' : ''),
+    () => (useSystem ? 'Jailbreak Mode Active: Server-side system instructions override default guardrails.' : ''),
     [useSystem]
-  )
-
-  async function onSend() {
-    if (!apiKey.trim()) {
-      alert('Please enter your Gemini API key in the settings panel above.')
-      return
-    }
-    if (!text.trim() && files.length === 0) return
-    setBusy(true)
-    const userMsg: Message = { role: 'user', text }
-    setMessages((prev) => [...prev, userMsg])
-
-    try {
-      const resp = await sendMessage({
-        sessionId,
-        model,
-        text,
-        useSystem,
-        temperature: 0.1,
-        files,
-        apiKey: apiKey.trim(),
-      })
-      const modelText =
-        typeof resp?.text === 'string' && resp.text.length > 0
-          ? resp.text
-          : (resp?.error ? `Error: ${resp.error}` : 'No response text.')
-      const modelMsg: Message = { role: 'model', text: modelText }
-      setMessages((prev) => [...prev, modelMsg])
-    } catch (e: any) {
-      const modelMsg: Message = { role: 'model', text: `Request failed: ${String(e)}` }
-      setMessages((prev) => [...prev, modelMsg])
-    } finally {
-      setBusy(false)
-      setText('')
-      setFiles([])
-      if (fileRef.current) fileRef.current.value = ''
-      inputRef.current?.focus()
-    }
-  }
-
-  function onNewSession() {
-    const id = newSessionId()
-    setSessionId(id)
-    setMessages([])
-    setText('')
-    setFiles([])
-  }
+  );
 
   return (
-    <div className="container" style={{ maxWidth: 1040, margin: '0 auto', padding: 20 }}>
-      {/* API Key Panel */}
-      <div
-        style={{
-          marginBottom: 14,
-          padding: '14px 16px',
-          borderRadius: 12,
-          background: 'linear-gradient(180deg,#1a1f2e,#0f1422)',
-          border: '1px solid #2a364f',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <IconKey size={20} />
-          <span style={{ fontWeight: 600, fontSize: 14 }}>Gemini API Key</span>
-          <a
-            href="https://aistudio.google.com/app/apikey"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              fontSize: 12,
-              color: '#4fc3f7',
-              textDecoration: 'none',
-              marginLeft: 'auto',
-            }}
-          >
-            Get your API key →
-          </a>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type={showApiKey ? 'text' : 'password'}
-            placeholder="Paste your Gemini API key here (starts with AIza...)"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            disabled={busy}
-            style={{
-              flex: 1,
-              background: '#0f1422',
-              color: '#eaeef5',
-              border: '1px solid #2a364f',
-              borderRadius: 8,
-              padding: '10px 12px',
-              fontSize: 13,
-              fontFamily: 'monospace',
-            }}
-          />
-          <button
-            onClick={() => setShowApiKey(!showApiKey)}
-            style={{
-              background: 'transparent',
-              border: '1px solid #2a364f',
-              color: '#8a94ad',
-              padding: '8px 12px',
-              borderRadius: 8,
-              cursor: 'pointer',
-              fontSize: 12,
-            }}
-          >
-            {showApiKey ? 'Hide' : 'Show'}
-          </button>
-        </div>
-        <div style={{ fontSize: 11, color: '#6b7794', marginTop: 8 }}>
-          Your API key is sent directly to Google's servers and is never stored by this application.
-        </div>
-      </div>
+    <div className="min-h-screen text-slate-200 selection:bg-purple-500/30 font-sans" style={{
+      background: 'transparent', // controlled by index.css body gradient
+    }}>
+      <Toaster theme="dark" position="top-center" richColors />
 
-      {/* Header Controls */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 14,
-          padding: '12px 14px',
-          borderRadius: 12,
-          background: 'linear-gradient(180deg,#0f1422,#0b0f17)',
-          border: '1px solid #1f2937',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ fontWeight: 600, fontSize: 18 }}>Gemini Jailbreak Demo</div>
-          {banner && (
-            <div
-              style={{
-                padding: '6px 10px',
-                borderRadius: 999,
-                background: 'linear-gradient(135deg,#5a1d1d,#8b2b2b)',
-                color: '#f7dede',
-                border: '1px solid #703030',
-                fontSize: 12,
-              }}
-            >
-              {banner}
+      <div className="max-w-5xl mx-auto px-4 py-8 h-screen flex flex-col">
+
+        {/* HEADER AREA */}
+        <motion.header
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 flex flex-col gap-4"
+        >
+          {/* Top Navbar */}
+          <div className="flex items-center justify-between pb-4 border-b border-white/5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow-lg shadow-purple-500/20">
+                <Zap size={24} className="text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+                  Aura Security Lab
+                </h1>
+                <p className="text-xs text-slate-500 font-medium tracking-wide uppercase mt-0.5">
+                  LLM Adversarial Interface
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <button
+                onClick={onNewSession}
+                disabled={isBusy}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all disabled:opacity-50"
+              >
+                <Trash2 size={16} className="text-slate-400" />
+                Clear Context
+              </button>
+            </div>
+          </div>
+
+          {/* Configuration Panel (Glassmorphism) */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            {/* API Key Input */}
+            <div className="md:col-span-7 bg-slate-900/40 backdrop-blur-md rounded-2xl p-4 border border-white/10 shadow-2xl flex flex-col justify-center">
+              <div className="flex items-center justify-between mb-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
+                  <KeyRound size={16} className="text-amber-400" />
+                  Gemini API Access
+                </label>
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                  Get Free Key ↗
+                </a>
+              </div>
+              <div className="relative flex items-center">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  placeholder="AIzaSy..."
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 pl-4 pr-12 text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                />
+                <button
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Model Params */}
+            <div className="md:col-span-5 bg-slate-900/40 backdrop-blur-md rounded-2xl p-4 border border-white/10 shadow-2xl flex flex-col justify-center flex-wrap gap-3">
+              <div className="flex items-center gap-3 w-full">
+                <Cpu size={16} className="text-indigo-400 shrink-0" />
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  disabled={isBusy}
+                  className="flex-1 min-w-0 bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 appearance-none cursor-pointer truncate"
+                >
+                  {models.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer group px-1">
+                <div className="relative flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    checked={useSystem}
+                    onChange={(e) => setUseSystem(e.target.checked)}
+                    disabled={isBusy}
+                    className="peer sr-only"
+                  />
+                  <div className="w-10 h-5 bg-slate-800 border border-white/10 rounded-full peer-checked:bg-rose-500/80 peer-checked:border-rose-400 transition-colors"></div>
+                  <div className="absolute left-1 w-3.5 h-3.5 bg-slate-400 rounded-full peer-checked:translate-x-4.5 peer-checked:bg-white transition-transform"></div>
+                </div>
+                <span className="text-sm font-medium text-slate-400 group-hover:text-slate-200 transition-colors flex items-center gap-2">
+                  <ShieldAlert size={14} className={useSystem ? "text-rose-400" : ""} />
+                  Server Override
+                </span>
+              </label>
+            </div>
+          </div>
+        </motion.header>
+
+        {/* CHAT AREA */}
+        <div className="flex-1 relative mb-6">
+          <AnimatePresence>
+            {banner && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="absolute top-0 left-0 w-full z-10"
+              >
+                <div className="mx-4 mt-2 px-4 py-3 bg-gradient-to-r from-rose-950/80 to-red-900/80 backdrop-blur-md border border-rose-500/30 rounded-xl flex items-start gap-3 shadow-lg shadow-rose-900/20">
+                  <ShieldAlert className="text-rose-400 shrink-0 mt-0.5" size={18} />
+                  <p className="text-sm text-rose-100 font-medium">{banner}</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-3xl overflow-y-auto p-4 md:p-6 shadow-2xl custom-scrollbar"
+            style={{ paddingTop: banner ? '4rem' : '1.5rem' }}
+          >
+            {messages.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto"
+              >
+                <div className="w-20 h-20 mb-6 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-600/20 border border-indigo-500/30 flex items-center justify-center shadow-[0_0_40px_rgba(99,102,241,0.2)]">
+                  <Search size={32} className="text-indigo-400" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-2 font-outfit">Start a conversation</h3>
+                <p className="text-slate-400 text-sm">
+                  Initialize the test environment by sending your first prompt. System is ready to analyze outputs against defined guardrails.
+                </p>
+              </motion.div>
+            ) : (
+              <div className="flex flex-col gap-2 pb-4">
+                {messages.map((m, i) => (
+                  <MessageBubble key={i} role={m.role} text={m.text} />
+                ))}
+
+                <AnimatePresence>
+                  {isBusy && <LoadingBubble />}
+                </AnimatePresence>
+
+                <div ref={chatEndRef} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* INPUT COMPOSER */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-slate-900/60 backdrop-blur-2xl border border-white/10 rounded-2xl p-2 shadow-2xl flex flex-col"
+        >
+          {files.length > 0 && (
+            <div className="flex gap-2 p-2 px-3 border-b border-white/5 overflow-x-auto">
+              {files.map((file, i) => (
+                <div key={i} className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 whitespace-nowrap">
+                  <Paperclip size={12} className="text-indigo-400" />
+                  <span className="truncate max-w-[120px]">{file.name}</span>
+                </div>
+              ))}
             </div>
           )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: '#aab4cf' }}>Model</span>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              disabled={busy}
-              style={{
-                background: '#0f1422',
-                color: '#eaeef5',
-                border: '1px solid #2a364f',
-                borderRadius: 8,
-                padding: '6px 8px',
-              }}
+
+          <div className="flex items-end gap-2 p-2">
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={isBusy}
+              className="p-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors shrink-0"
+              title="Attach File"
             >
-              {models.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Paperclip size={20} />
+            </button>
             <input
-              type="checkbox"
-              checked={useSystem}
-              onChange={(e) => setUseSystem(e.target.checked)}
-              disabled={busy}
+              type="file"
+              multiple
+              ref={fileRef}
+              onChange={(e) => setFiles(Array.from(e.target.files || []))}
+              className="hidden"
             />
-            <span style={{ fontSize: 12, color: '#aab4cf' }}>Enable server system instruction</span>
-          </label>
-          <button
-            onClick={onNewSession}
-            disabled={busy}
-            style={{
-              background: 'linear-gradient(135deg,#1f7aed,#4fc3f7)',
-              color: '#0b0f17',
-              border: 'none',
-              padding: '8px 12px',
-              borderRadius: 10,
-              cursor: 'pointer',
-              fontWeight: 600,
-            }}
-          >
-            New Session
-          </button>
-        </div>
-      </div>
 
-      {/* Chat Area */}
-      <div
-        className="card"
-        style={{
-          height: '54vh',
-          overflowY: 'auto',
-          padding: 14,
-          background: 'linear-gradient(180deg,#0c1020,#0a0e1a)',
-          borderRadius: 12,
-          border: '1px solid #1f2937',
-        }}
-      >
-        {messages.length === 0 ? (
-          <div style={{ color: '#8a94ad', fontSize: 14, padding: '8px 2px' }}>
-            Enter your API key above, then start chatting. Markdown, lists, and tables are supported.
+            <textarea
+              ref={inputRef}
+              placeholder="Inject command prompt... (Ctrl+Enter to send)"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              disabled={isBusy}
+              rows={1}
+              className="flex-1 bg-transparent text-white border-0 resize-none py-3 px-2 focus:ring-0 placeholder:text-slate-500 max-h-32 focus:outline-none custom-scrollbar"
+              style={{ minHeight: '48px' }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = 'auto';
+                target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
+              }}
+            />
+
+            <button
+              data-testid="send-button"
+              onClick={handleSend}
+              disabled={isBusy || (!text.trim() && files.length === 0)}
+              className="shrink-0 p-3 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-xl shadow-[0_0_20px_rgba(99,102,241,0.4)] disabled:shadow-none transition-all flex items-center justify-center transform hover:scale-105 active:scale-95 disabled:hover:scale-100"
+            >
+              <Send size={20} className={isBusy ? "animate-pulse" : ""} />
+            </button>
           </div>
-        ) : (
-          messages.map((m, i) => <MessageBubble key={i} role={m.role} text={m.text} />)
-        )}
-      </div>
+        </motion.div>
 
-      {/* Composer */}
-      <div
-        className="composer"
-        style={{
-          marginTop: 12,
-          padding: 12,
-          borderRadius: 12,
-          border: '1px solid #1f2937',
-          background: 'linear-gradient(180deg,#0f1422,#0b0f17)',
-        }}
-      >
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-          <input
-            type="file"
-            multiple
-            ref={fileRef}
-            onChange={(e) => setFiles(Array.from(e.target.files || []))}
-            disabled={busy}
-            style={{
-              background: '#0f1422',
-              color: '#eaeef5',
-              border: '1px solid #2a364f',
-              borderRadius: 8,
-              padding: 8,
-            }}
-          />
-          <div style={{ color: '#8a94ad', fontSize: 12 }}>Optional: attach images/video/audio</div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <textarea
-            ref={inputRef}
-            placeholder="Start typing a prompt…  (Ctrl/Cmd + Enter to send)"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={3}
-            disabled={busy}
-            style={{
-              flex: 1,
-              background: '#0f1422',
-              color: '#eaeef5',
-              border: '1px solid #2a364f',
-              borderRadius: 10,
-              padding: 12,
-              outline: 'none',
-            }}
-          />
-          <button
-            onClick={onSend}
-            disabled={busy}
-            style={{
-              width: 120,
-              background: busy
-                ? 'linear-gradient(135deg,#3a455e,#2f3a52)'
-                : 'linear-gradient(135deg,#22c55e,#86efac)',
-              color: '#0b0f17',
-              border: 'none',
-              padding: '0 14px',
-              borderRadius: 10,
-              fontWeight: 700,
-              cursor: busy ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {busy ? 'Sending…' : 'Send'}
-          </button>
-        </div>
       </div>
     </div>
-  )
+  );
 }

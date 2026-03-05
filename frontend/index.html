@@ -6,8 +6,14 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Gemini Jailbreak Demo</title>
     <style>
-      body { margin: 0; font-family: Inter, system-ui, Arial, sans-serif; background: #0b0f17; color: #eaeef5; }
-      .container { max-width: 920px; margin: 0 auto; padding: 24px; }
+      body { 
+          margin: 0; font-family: Inter, system-ui, Arial, sans-serif; color: #eaeef5;
+          background-color: #0b0f17;
+          background-image: linear-gradient(rgba(11,15,23,0.85), rgba(11,15,23,0.95)), url('/bg.png');
+          background-size: cover;
+          background-position: center;
+          background-attachment: fixed;
+      }
       .card { background: #121826; border: 1px solid #1f2937; border-radius: 12px; padding: 16px; }
       .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
       .chat { height: 60vh; overflow-y: auto; padding: 12px; background: #0f1422; border-radius: 8px; border: 1px solid #1f2937; }

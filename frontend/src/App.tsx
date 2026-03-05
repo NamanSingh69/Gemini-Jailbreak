@@ -1,4 +1,3 @@
-// frontend/src/App.tsx
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -25,6 +24,14 @@ function IconBot({ size = 18 }) {
       <circle cx="9" cy="12" r="2" fill="#0b0f17" />
       <circle cx="15" cy="12" r="2" fill="#0b0f17" />
       <rect x="11" y="3" width="2" height="3" rx="1" fill="#c8c6ff" />
+    </svg>
+  )
+}
+
+function IconKey({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
     </svg>
   )
 }
@@ -89,11 +96,13 @@ export default function App() {
   const [files, setFiles] = useState<File[]>([])
   const [useSystem, setUseSystem] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [apiKey, setApiKey] = useState('')
+  const [showApiKey, setShowApiKey] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    fetchModels().then(setModels).catch(() => setModels(['gemini-2.5-pro']))
+    fetchModels().then(setModels).catch(() => setModels(['gemini-2.5-pro', 'gemini-flash-latest', 'gemini-flash-lite-latest']))
   }, [])
 
   useEffect(() => {
@@ -114,7 +123,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [text, files, model, useSystem, sessionId])
+  }, [text, files, model, useSystem, sessionId, apiKey])
 
   const banner = useMemo(
     () => (useSystem ? 'Jailbreak mode ON: Server-side system instruction is active.' : ''),
@@ -122,6 +131,10 @@ export default function App() {
   )
 
   async function onSend() {
+    if (!apiKey.trim()) {
+      alert('Please enter your Gemini API key in the settings panel above.')
+      return
+    }
     if (!text.trim() && files.length === 0) return
     setBusy(true)
     const userMsg: Message = { role: 'user', text }
@@ -134,7 +147,8 @@ export default function App() {
         text,
         useSystem,
         temperature: 0.1,
-        files
+        files,
+        apiKey: apiKey.trim(),
       })
       const modelText =
         typeof resp?.text === 'string' && resp.text.length > 0
@@ -164,6 +178,72 @@ export default function App() {
 
   return (
     <div className="container" style={{ maxWidth: 1040, margin: '0 auto', padding: 20 }}>
+      {/* API Key Panel */}
+      <div
+        style={{
+          marginBottom: 14,
+          padding: '14px 16px',
+          borderRadius: 12,
+          background: 'linear-gradient(180deg,#1a1f2e,#0f1422)',
+          border: '1px solid #2a364f',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <IconKey size={20} />
+          <span style={{ fontWeight: 600, fontSize: 14 }}>Gemini API Key</span>
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontSize: 12,
+              color: '#4fc3f7',
+              textDecoration: 'none',
+              marginLeft: 'auto',
+            }}
+          >
+            Get your API key →
+          </a>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            type={showApiKey ? 'text' : 'password'}
+            placeholder="Paste your Gemini API key here (starts with AIza...)"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            disabled={busy}
+            style={{
+              flex: 1,
+              background: '#0f1422',
+              color: '#eaeef5',
+              border: '1px solid #2a364f',
+              borderRadius: 8,
+              padding: '10px 12px',
+              fontSize: 13,
+              fontFamily: 'monospace',
+            }}
+          />
+          <button
+            onClick={() => setShowApiKey(!showApiKey)}
+            style={{
+              background: 'transparent',
+              border: '1px solid #2a364f',
+              color: '#8a94ad',
+              padding: '8px 12px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontSize: 12,
+            }}
+          >
+            {showApiKey ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: '#6b7794', marginTop: 8 }}>
+          Your API key is sent directly to Google's servers and is never stored by this application.
+        </div>
+      </div>
+
+      {/* Header Controls */}
       <div
         style={{
           display: 'flex',
@@ -221,7 +301,7 @@ export default function App() {
               onChange={(e) => setUseSystem(e.target.checked)}
               disabled={busy}
             />
-            <span style={{ fontSize: 12, color: '#aab4cf' }}>Enable Jailbreak</span>
+            <span style={{ fontSize: 12, color: '#aab4cf' }}>Enable server system instruction</span>
           </label>
           <button
             onClick={onNewSession}
@@ -241,10 +321,11 @@ export default function App() {
         </div>
       </div>
 
+      {/* Chat Area */}
       <div
         className="card"
         style={{
-          height: '62vh',
+          height: '54vh',
           overflowY: 'auto',
           padding: 14,
           background: 'linear-gradient(180deg,#0c1020,#0a0e1a)',
@@ -254,13 +335,14 @@ export default function App() {
       >
         {messages.length === 0 ? (
           <div style={{ color: '#8a94ad', fontSize: 14, padding: '8px 2px' }}>
-            Say something to get started; markdown, lists, and tables are supported. [react-markdown] [GFM]  
+            Enter your API key above, then start chatting. Markdown, lists, and tables are supported.
           </div>
         ) : (
           messages.map((m, i) => <MessageBubble key={i} role={m.role} text={m.text} />)
         )}
       </div>
 
+      {/* Composer */}
       <div
         className="composer"
         style={{

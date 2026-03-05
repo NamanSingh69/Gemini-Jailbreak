@@ -19,6 +19,7 @@ export async function sendMessage(params: {
   useSystem: boolean
   temperature?: number
   files?: File[]
+  apiKey: string
 }) {
   const fd = new FormData()
   fd.append('session_id', params.sessionId)
@@ -31,6 +32,9 @@ export async function sendMessage(params: {
   }
   const res = await fetch(`${BASE}/api/send`, {
     method: 'POST',
+    headers: {
+      'x-api-key': params.apiKey,
+    },
     body: fd
   })
   return res.json()

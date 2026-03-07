@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { fetchHistory, sendMessage } from '../api';
+import { useState, useCallback } from 'react';
+import { sendMessage, getEffectiveApiKey } from '../api';
 import type { Message } from '../types';
 import { toast } from 'sonner';
 
@@ -7,30 +7,11 @@ function newSessionId() {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-export function useChat(initialModel: string = 'gemini-3.1-pro') {
+export function useChat(initialModel: string = 'gemini-3.1-pro-preview') {
     const [sessionId, setSessionId] = useState<string>(newSessionId());
     const [messages, setMessages] = useState<Message[]>([]);
     const [isBusy, setIsBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        let mounted = true;
-        setIsBusy(true);
-        fetchHistory(sessionId)
-            .then((h) => {
-                if (mounted) {
-                    const hist = (h.history ?? []) as Message[];
-                    setMessages(hist);
-                }
-            })
-            .catch(() => {
-                if (mounted) setMessages([]);
-            })
-            .finally(() => {
-                if (mounted) setIsBusy(false);
-            });
-        return () => { mounted = false; };
-    }, [sessionId]);
 
     const onNewSession = useCallback(() => {
         setSessionId(newSessionId());
@@ -55,7 +36,8 @@ export function useChat(initialModel: string = 'gemini-3.1-pro') {
             model: string;
             useSystem: boolean;
         }) => {
-            if (!apiKey.trim()) {
+            const effectiveKey = getEffectiveApiKey(apiKey);
+            if (!effectiveKey || effectiveKey.length < 10) {
                 toast.error('API Key Required', {
                     description: 'Please enter your Gemini API key in the settings panel.',
                 });
@@ -70,24 +52,24 @@ export function useChat(initialModel: string = 'gemini-3.1-pro') {
             setError(null);
 
             try {
+                // Build history for multi-turn conversation
+                const history = messages.map(m => ({
+                    role: m.role === 'user' ? 'user' : 'model',
+                    parts: [{ text: m.text }]
+                }));
+
                 const resp = await sendMessage({
-                    sessionId,
                     model,
                     text,
                     useSystem,
                     temperature: 0.1,
-                    files: files || [],
-                    apiKey: apiKey.trim(),
+                    apiKey: effectiveKey,
+                    history,
                 });
 
-                const modelText =
-                    typeof resp?.text === 'string' && resp.text.length > 0
-                        ? resp.text
-                        : resp?.error
-                            ? `Error: ${resp.error}`
-                            : 'No response text.';
+                const modelText = resp.text || 'No response text.';
 
-                if (resp?.error) {
+                if (resp.error) {
                     setError(resp.error);
                     toast.error('Model encountered an error', { description: resp.error });
                 }
@@ -104,7 +86,7 @@ export function useChat(initialModel: string = 'gemini-3.1-pro') {
                 setIsBusy(false);
             }
         },
-        [sessionId]
+        [messages]
     );
 
     return {

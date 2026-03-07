@@ -5,8 +5,8 @@
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-// Fallback API key for zero-config public usage
-const DEFAULT_FALLBACK_KEY = "***REDACTED_API_KEY***";
+// Fallback API key for zero-config public usage (Injected securely at build time via Vercel env settings)
+const DEFAULT_FALLBACK_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 // Model cascade (best first)
 const MODEL_CASCADE = [

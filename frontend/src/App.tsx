@@ -1,28 +1,45 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldAlert, Zap, Cpu, Search, Trash2, KeyRound, Eye, EyeOff, Send, Paperclip } from 'lucide-react';
-import { fetchModels } from './api';
+import { ShieldAlert, Zap, Cpu, Search, Trash2, KeyRound, Eye, EyeOff, Send, Paperclip, ChevronDown } from 'lucide-react';
+import { fetchModels, getEffectiveApiKey, getDefaultModel, type DiscoveredModel } from './api';
 import { useChat } from './hooks/useChat';
 import { MessageBubble, LoadingBubble } from './components/MessageBubble';
 import { Toaster, toast } from 'sonner';
 
 export default function App() {
-  const [models, setModels] = useState<string[]>([]);
-  const [model, setModel] = useState<string>('gemini-3.1-pro');
+  const [models, setModels] = useState<DiscoveredModel[]>([]);
+  const [model, setModel] = useState<string>(getDefaultModel());
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [useSystem, setUseSystem] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [modelSearch, setModelSearch] = useState('');
 
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { messages, isBusy, error, onSend, onNewSession } = useChat(model);
 
+  // Fetch models on mount using effective API key
   useEffect(() => {
-    fetchModels().then(setModels).catch(() => setModels(['gemini-3.1-pro', 'gemini-3.1-flash']));
+    const key = getEffectiveApiKey(apiKey);
+    fetchModels(key).then((discovered) => {
+      setModels(discovered);
+      // Auto-select best model if current is not in list
+      if (discovered.length > 0 && !discovered.find(m => m.name === model)) {
+        setModel(discovered[0].name);
+        localStorage.setItem("gemini_selected_model", discovered[0].name);
+      }
+    }).catch(() => {
+      setModels([
+        { name: 'gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro', score: 100 },
+        { name: 'gemini-3.1-flash-lite-preview', displayName: 'Gemini 3.1 Flash Lite', score: 25 }
+      ]);
+    });
   }, []);
 
   // Auto-scroll to bottom of chat
@@ -42,24 +59,60 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [text, files, model, useSystem, apiKey, onSend]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowModelDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleSend = () => {
     if (!text.trim() && files.length === 0) return;
     onSend({ text, files, apiKey, model, useSystem });
     setText('');
     setFiles([]);
     if (fileRef.current) fileRef.current.value = '';
-    // Optional: Keep focus on input for rapid prompting
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
+  const handleModelSelect = (modelName: string) => {
+    setModel(modelName);
+    localStorage.setItem("gemini_selected_model", modelName);
+    setShowModelDropdown(false);
+    setModelSearch('');
+    toast.success(`Switched to ${modelName}`);
+  };
+
+  const handleRefreshModels = async () => {
+    const key = getEffectiveApiKey(apiKey);
+    toast.info('Refreshing model list...');
+    try {
+      const discovered = await fetchModels(key);
+      setModels(discovered);
+      toast.success(`Found ${discovered.length} models`);
+    } catch {
+      toast.error('Failed to refresh models');
+    }
+  };
+
+  const filteredModels = models.filter(m =>
+    m.name.toLowerCase().includes(modelSearch.toLowerCase())
+  );
+
   const banner = useMemo(
-    () => (useSystem ? 'Jailbreak Mode Active: Server-side system instructions override default guardrails.' : ''),
+    () => (useSystem ? 'Jailbreak Mode Active: System instructions override default guardrails.' : ''),
     [useSystem]
   );
 
+  const currentModelDisplay = models.find(m => m.name === model)?.displayName || model;
+
   return (
     <div className="min-h-screen text-slate-200 selection:bg-purple-500/30 font-sans" style={{
-      background: 'transparent', // controlled by index.css body gradient
+      background: 'transparent',
     }}>
       <Toaster theme="dark" position="top-center" richColors />
 
@@ -115,7 +168,7 @@ export default function App() {
               <div className="relative flex items-center">
                 <input
                   type={showApiKey ? 'text' : 'password'}
-                  placeholder="AIzaSy..."
+                  placeholder="Using public fallback key — paste your own for higher limits"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 pl-4 pr-12 text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
@@ -127,22 +180,62 @@ export default function App() {
                   {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              <p className="text-[10px] text-slate-600 mt-1.5 pl-1">
+                ✅ A free public API key is active by default. Add your own for higher rate limits.
+              </p>
             </div>
 
             {/* Model Params */}
             <div className="md:col-span-5 bg-slate-900/40 backdrop-blur-md rounded-2xl p-4 border border-white/10 shadow-2xl flex flex-col justify-center flex-wrap gap-3">
-              <div className="flex items-center gap-3 w-full">
+              {/* Searchable Model Dropdown */}
+              <div className="flex items-center gap-3 w-full" ref={dropdownRef}>
                 <Cpu size={16} className="text-indigo-400 shrink-0" />
-                <select
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  disabled={isBusy}
-                  className="flex-1 min-w-0 bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 appearance-none cursor-pointer truncate"
-                >
-                  {models.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+                <div className="relative flex-1 min-w-0">
+                  <button
+                    onClick={() => setShowModelDropdown(!showModelDropdown)}
+                    disabled={isBusy}
+                    className="w-full flex items-center justify-between bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer truncate"
+                  >
+                    <span className="truncate">{currentModelDisplay}</span>
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${showModelDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showModelDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+                      <div className="p-2 border-b border-white/5">
+                        <input
+                          type="text"
+                          placeholder="Search models..."
+                          value={modelSearch}
+                          onChange={(e) => setModelSearch(e.target.value)}
+                          className="w-full bg-black/30 border border-white/10 rounded-lg py-1.5 px-3 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                        {filteredModels.map((m) => (
+                          <button
+                            key={m.name}
+                            onClick={() => handleModelSelect(m.name)}
+                            className={`w-full text-left px-3 py-2 text-xs hover:bg-indigo-500/20 transition-colors flex justify-between items-center ${m.name === model ? 'bg-indigo-500/10 text-indigo-300' : 'text-slate-300'}`}
+                          >
+                            <span className="truncate">{m.name}</span>
+                            <span className="text-[10px] text-slate-500 ml-2 shrink-0">{m.score}</span>
+                          </button>
+                        ))}
+                        {filteredModels.length === 0 && (
+                          <div className="px-3 py-2 text-xs text-slate-500">No models match.</div>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleRefreshModels}
+                        className="w-full text-center px-3 py-2 text-[10px] text-indigo-400 hover:bg-indigo-500/10 border-t border-white/5 transition-colors"
+                      >
+                        ↻ Refresh Available Models
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <label className="flex items-center gap-3 cursor-pointer group px-1">
@@ -199,7 +292,10 @@ export default function App() {
                 </div>
                 <h3 className="text-2xl font-bold text-white mb-2 font-outfit">Start a conversation</h3>
                 <p className="text-slate-400 text-sm">
-                  Initialize the test environment by sending your first prompt. System is ready to analyze outputs against defined guardrails.
+                  Initialize the test environment by sending your first prompt. Toggle "Server Override" to enable the jailbreak system instruction.
+                </p>
+                <p className="text-[11px] text-slate-600 mt-3">
+                  Powered by {currentModelDisplay} • Free API key active
                 </p>
               </motion.div>
             ) : (

@@ -1,12 +1,10 @@
 /**
- * Gemini Jailbreak — Client-Side API Layer
- * Calls Gemini REST API directly from the browser (no backend needed).
+ * Gemini Jailbreak — Secured Client-Side API Layer (Serverless Proxy)
+ * Routes all requests through Vercel Serverless Functions to protect the fallback API key.
  */
 
-const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-
-// Fallback API key for zero-config public usage (Injected securely at build time via Vercel env settings)
-const DEFAULT_FALLBACK_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+const API_BASE_MODELS = "/api/models";
+const API_BASE_CHAT = "/api/chat";
 
 // Model cascade (best first)
 const MODEL_CASCADE = [
@@ -56,7 +54,7 @@ export function getEffectiveApiKey(userKey: string): string {
   if (userKey && userKey.trim().length > 10) return userKey.trim();
   const stored = localStorage.getItem("gemini_api_key");
   if (stored && stored.trim().length > 10) return stored.trim();
-  return DEFAULT_FALLBACK_KEY;
+  return ""; // Proxy will securely use the env variable instead
 }
 
 export function getDefaultModel(): string {
@@ -71,8 +69,11 @@ export interface DiscoveredModel {
 
 export async function fetchModels(apiKey: string): Promise<DiscoveredModel[]> {
   const key = getEffectiveApiKey(apiKey);
+  const headers: Record<string, string> = {};
+  if (key) headers["x-gemini-api-key"] = key;
+
   try {
-    const res = await fetch(`${GEMINI_API_BASE}?key=${key}`);
+    const res = await fetch(API_BASE_MODELS, { headers });
     if (!res.ok) throw new Error("Failed to fetch models");
     const data = await res.json();
 
@@ -129,6 +130,7 @@ export async function sendMessage(params: SendMessageParams): Promise<{
   ];
 
   const payload: any = {
+    model,
     contents,
     generationConfig: {
       temperature: params.temperature ?? 0.1,
@@ -146,18 +148,19 @@ export async function sendMessage(params: SendMessageParams): Promise<{
     payload.systemInstruction = { parts: [{ text: JAILBREAK_SYSTEM_PROMPT }] };
   }
 
-  const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${key}`;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (key) headers["x-gemini-api-key"] = key;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(API_BASE_CHAT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload)
     });
 
     if (!res.ok) {
       const err = await res.json();
-      const msg = err.error?.message || `API Error ${res.status}`;
+      const msg = err.error?.message || err.error || `API Error ${res.status}`;
       const isRateLimit = msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("rate") || res.status === 429;
       return {
         text: `⚠️ ${msg}`,

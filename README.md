@@ -2,15 +2,13 @@
 
 > LLM Adversarial Testing Interface for exploring Gemini model guardrails.
 
-**🌐 Live:** [https://gemini-jailbreak-gamma.vercel.app](https://gemini-jailbreak-gamma.vercel.app)
-
 ## Overview
 
 Aura Security Lab is a cybersecurity research tool that demonstrates adversarial prompt injection techniques against Google Gemini models. It features a toggle-based "Server Override" mode that applies a jailbreak system instruction to test model safety boundaries.
 
 ## Features
 
-- **Zero-Config Access** — Works immediately with a public fallback API key
+- **Bring Your Own Key** — Uses the deployment's server-side Gemini key, or a key you enter in the app
 - **Dynamic Model Selection** — Searchable dropdown with live model discovery from Google API
 - **Jailbreak Toggle** — Server Override switch applies adversarial system instructions
 - **Multi-Turn Conversations** — Full conversation history maintained client-side

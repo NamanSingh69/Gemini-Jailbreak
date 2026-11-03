@@ -181,7 +181,7 @@ export default function App() {
                 </button>
               </div>
               <div className="text-[10px] text-slate-600 mt-1.5 pl-1 leading-snug">
-                ✅ A free public API key is active by default. Add your own for higher rate limits.<br />
+                Paste your own Gemini API key (free from Google AI Studio). It is sent only to this app's proxy.<br />
                 <strong className="text-slate-500">Free Tier Limits:</strong> 15 Requests/Min, 1,000,000 Tokens/Min, 1,500 Requests/Day.
               </div>
             </div>

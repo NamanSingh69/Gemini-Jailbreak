@@ -24,3 +24,8 @@ Thumbs.db
 
 # Vercel
 .vercel/
+
+# Test output and caches
+playwright-report/
+test-results/
+__pycache__/
